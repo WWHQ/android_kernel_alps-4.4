@@ -1,13 +1,13 @@
 /**
  * ============================================================================
- * 泪心开源驱动 - TearGame Open Source Driver (主入口规避警告修正版)
+ * 泪心开源驱动 - TearGame Open Source Driver (Kprobe 符号过检测版入口)
  * ============================================================================
  */
 
 #include <linux/module.h>
 #include <linux/tty.h>
 #include <linux/miscdevice.h>
-#include <linux/kallsyms.h> 
+#include <linux/kprobes.h> // 必须引入此头文件以使用 Kprobe 绕过封锁
 #include "comm.h"
 #include "memory.h"
 #include "process.h"
@@ -25,6 +25,28 @@ int dispatch_close(struct inode *node, struct file *file);
 long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned long const arg);
 int __init driver_entry(void);
 void __exit driver_unload(void);
+
+/* 
+ * =================【核心黑客算法：利用 Kprobe 动态白嫖被封锁的 API】================= 
+ */
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+static kallsyms_lookup_name_t get_kallsyms_lookup_name(void)
+{
+    struct kprobe kp;
+    kallsyms_lookup_name_t func_ptr = NULL;
+    
+    memset(&kp, 0, sizeof(struct kprobe));
+    kp.symbol_name = "kallsyms_lookup_name"; // 让探针直接指向这个被封锁的函数
+    
+    if (register_kprobe(&kp) < 0) {
+        return NULL;
+    }
+    
+    // 成功挂载后，探针的 .addr 字段里存放的就是该函数的绝对内存地址
+    func_ptr = (kallsyms_lookup_name_t)kp.addr;
+    unregister_kprobe(&kp); // 拿到地址立刻卸载探针，安全无残留
+    return func_ptr;
+}
 
 int dispatch_open(struct inode *node, struct file *file)
 {
@@ -59,7 +81,6 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 		{
 			return -1;
 		}
-		// 【修复点】：强制转换为符合 memory.h 的 void* 指针，消灭报错与警告
 		if (read_process_memory(cm.pid, (uintptr_t)cm.addr, (void *)(uintptr_t)cm.buffer, (size_t)cm.size) == false)
 		{
 			return -1;
@@ -72,7 +93,6 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 		{
 			return -1;
 		}
-		// 【修复点】：同理强制类型转换
 		if (write_process_memory(cm.pid, (uintptr_t)cm.addr, (void *)(uintptr_t)cm.buffer, (size_t)cm.size) == false)
 		{
 			return -1;
@@ -114,25 +134,30 @@ struct miscdevice misc = {
 int __init driver_entry(void)
 {
 	int ret;
+	kallsyms_lookup_name_t local_kallsyms_lookup = NULL;
+
 	printk(KERN_INFO "=============================================\n");
 	printk(KERN_INFO "[TearGame] Driver loading...\n");
 	printk(KERN_INFO "[TearGame] Author: 泪心 (Tear)\n");
-	printk(KERN_INFO "[TearGame] QQ: 2254013571\n");
-	printk(KERN_INFO "[TearGame] Email: tearhacker@outlook.com\n");
-	printk(KERN_INFO "[TearGame] Telegram: t.me/TearGame\n");
-	printk(KERN_INFO "[TearGame] GitHub: ://github.com\n");
 	printk(KERN_INFO "=============================================\n");
 	
-	// 在此处统一解密内核函数指针
-	dyn_put_pid = (void (*)(struct pid *))kallsyms_lookup_name("put_pid");
-	dyn_d_path  = (char *(*)(const struct path *, char *, int))kallsyms_lookup_name("d_path");
-	dyn_up_read  = (void (*)(struct rw_semaphore *))kallsyms_lookup_name("up_read");
+	// 1. 先通过 Kprobe 绕过封锁解密核心查找器
+	local_kallsyms_lookup = get_kallsyms_lookup_name();
+	if (!local_kallsyms_lookup) {
+		printk(KERN_ERR "[TearGame] 错误：无法通过 Kprobe 解密内核核心符号器！\n");
+		return -EINVAL;
+	}
+
+	// 2. 使用成功解密的查找器提取雷电 4.4 内核的所有动态印记
+	dyn_put_pid = (void (*)(struct pid *))local_kallsyms_lookup("put_pid");
+	dyn_d_path  = (char *(*)(const struct path *, char *, int))local_kallsyms_lookup("d_path");
+	dyn_up_read  = (void (*)(struct rw_semaphore *))local_kallsyms_lookup("up_read");
 
 	if (!dyn_put_pid || !dyn_d_path || !dyn_up_read) {
 		printk(KERN_ERR "[TearGame] 错误：动态解析雷电内核关键符号失败！\n");
 		return -EINVAL;
 	}
-	printk(KERN_INFO "[TearGame] 雷电内核运行指针注入成功！\n");
+	printk(KERN_INFO "[TearGame] 成功！雷电内核运行指针已安全注入！\n");
 
 	ret = misc_register(&misc);
 	if (ret == 0) {
@@ -148,7 +173,6 @@ void __exit driver_unload(void)
 {
 	printk(KERN_INFO "[TearGame] Driver unloading...\n");
 	misc_deregister(&misc);
-	printk(KERN_INFO "[TearGame] Device /dev/%s unregistered\n", DEVICE_NAME);
 	printk(KERN_INFO "[TearGame] Goodbye! - by 泪心\n");
 }
 
