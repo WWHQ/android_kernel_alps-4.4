@@ -29,7 +29,13 @@
 	//泪心驱动完整开源读写内核源码新项目链接 https://github.com/tearhacker/TearGame_KernelDriver_Android_WriteReadMemory
 
 	#include "memory.h"
-	#include <linux/mm.h>
+
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+	#include <linux/sched/mm.h>
+	#else
+	#include <linux/sched.h>
+	#endif
+
 	#include <linux/slab.h>
 	#include <linux/uaccess.h>
 	#include <linux/version.h>
