@@ -29,12 +29,12 @@ jobs:
             binutils \
             git
 
-      # =================【步骤 1：拉取匹配的 Android 4.4 内核源码（已修复 404 镜像地址）】=================
+      # =================【步骤 1：直接从 GitHub 本地镜像拉取 4.4 内核，杜绝网络 404/DNS 错误】=================
       - name: Clone Android 4.4 Kernel Source
         run: |
-          echo "正在从清华大学开源镜像站拉取 Android 4.4 通用内核源码..."
-          # 使用清华源或标准的 AOSP 完整基础路径进行克隆
-          git clone --depth 1 -b android-4.4 https://tsinghua.edu.cn kernel-source
+          echo "正在从 GitHub AOSP 官方镜像库拉取 Android 4.4 稳定版内核源码..."
+          # 使用 GitHub 本地镜像库，Actions 节点可以满速下载且不依赖外部网络
+          git clone --depth 1 -b android-4.4 https://github.com kernel-source
           
           echo "正在将你的驱动代码移动到内核树中进行树内编译..."
           mkdir -p kernel-source/drivers/rmm
