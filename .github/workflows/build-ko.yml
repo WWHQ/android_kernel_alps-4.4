@@ -16,14 +16,14 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential binutils
 
-      # =================【步骤 1：不下载源码，直接本地手绑极简编译环境】=================
+      # =================【步骤 1：本地构建纯净伪内核树（100% 禁用 CRC）】=================
       - name: Setup Local Fake Kernel Tree
         run: |
           echo "==== 开始在本地构建极简的 4.4 伪内核树 ===="
           mkdir -p fake-kernel/include/config
           mkdir -p fake-kernel/include/generated
           
-          # 创建内核最基础的 Makefile 壳子，欺骗模块编译器
+          # 创建内核最基础的 Makefile，【绝对不要】开启任何 MODVERSIONS！
           cat << 'EOF' > fake-kernel/Makefile
           VERSION = 4
           PATCHLEVEL = 4
@@ -31,61 +31,53 @@ jobs:
           EXTRAVERSION =
           NAME = Slower-than-a-snail
           
-          # 核心编译桩
           obj-y :=
           
-          # 允许模块编译的基础规则
-          ccflags-y := -DCONFIG_MODVERSIONS -DMODVERSIONS
+          # 确保全局没有任何 -DCONFIG_MODVERSIONS 干扰
+          ccflags-y := 
           
           all:
-          	@echo "Fake kernel ready."
+          	@echo "Clean Fake kernel ready."
           EOF
           
           # 创建空的必备头文件防止报错
           touch fake-kernel/include/generated/autoconf.h
           echo '#define CONFIG_MODULES 1' > fake-kernel/include/config/modules.h
 
-      # =================【步骤 2：直接编译你的 RMM 模块】=================
+      # =================【步骤 2：纯净编译你的 RMM 模块】=================
       - name: Build rmm modules
         run: |
           echo "==== 开始在本仓库路径下直接编译驱动 ===="
-          # 切换到你存放驱动代码的目录（假设是 drivers/rmm）
           cd drivers/rmm
           
-          # 如果你原本的 Makefile 绑定了复杂的内核树，我们在这里直接通过 KDIR 强行覆盖它
-          # 使用当前的伪内核目录作为内核依赖
+          # 用完全禁用 CRC 的配置去编译你的 TearGame.ko
           make -C ../../fake-kernel M=$PWD modules || true
           
-          # 如果上面因为缺少头文件报错，我们尝试用当前系统（Ubuntu）的内核环境先强行把 ko 编译出来
+          # 兜底方案：如果上面由于缺环境失败，用宿主机环境强行啃出不带 CRC 的 ko 骨架
           if [ ! -f "TearGame.ko" ]; then
             echo "尝试使用宿主机环境强行破壳编译..."
             make -C /lib/modules/$(uname -r)/build M=$PWD modules || true
           fi
 
-      # =================【步骤 3：核心双段覆盖补丁（器官移植）】=================
+      # =================【步骤 3：核心双段覆盖补丁（仅注入身份，不毁符号）】=================
       - name: Patch Module Section via Objcopy
         run: |
-          # 寻找编译出来的驱动文件
           TARGET_KO=$(find drivers/rmm -name "TearGame.ko" | head -n 1)
           
-          # 此时完全使用你上传在仓库根目录下的 fastpipe_base.ko 文件进行强刷
           if [ -f "$TARGET_KO" ] && [ -f "fastpipe_base.ko" ]; then
-            echo "==== 开始对 TearGame.ko 进行双段覆盖（偷梁换柱） ===="
+            echo "==== 开始对 TearGame.ko 进行精准身份注入 ===="
             
-            # 1. 提取并覆盖 .modinfo 段（把雷电的 4.4.146 版本信息和内核特征 100% 灌入你的驱动）
+            # 【核心调整】：
+            # 1. 只把雷电官方的 .modinfo（含 4.4.146 伪装字符串）强行灌入你的驱动
             objcopy --dump-section .modinfo=fastpipe_modinfo.bin fastpipe_base.ko
             objcopy --update-section .modinfo=fastpipe_modinfo.bin "$TARGET_KO"
-            echo "-> .modinfo (vermagic) 覆盖成功"
+            echo "-> .modinfo (vermagic) 注入成功"
             
-            # 2. 提取并覆盖 __versions 段（把雷电原版驱动的所有函数 CRC 校验码强行灌入你的驱动）
-            objcopy --dump-section __versions=fastpipe_versions.bin fastpipe_base.ko
-            objcopy --update-section __versions=fastpipe_versions.bin "$TARGET_KO"
-            echo "-> __versions (CRC符号表) 覆盖成功"
+            # 2. 【绝对不要】覆盖 __versions 段！让你的驱动保留自己最纯净、不带 CRC 的原生符号表。
             
             echo "==== 驱动补丁全部修补完成！ ===="
           else
-            echo "错误：未找到编译出的 TearGame.ko 或仓库根目录下的 fastpipe_base.ko！"
-            echo "请确保你的仓库根目录下确实提交了 fastpipe_base.ko 文件。"
+            echo "错误：未找到 TearGame.ko 或仓库根目录下的 fastpipe_base.ko！"
             exit 1
           fi
 
