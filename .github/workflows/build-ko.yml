@@ -18,23 +18,17 @@ jobs:
           build-essential bc bison flex \
           libssl-dev libelf-dev
 
-    - name: Clone kernel source
-      run: |
-         git clone https://github.com/WWHQ/android_kernel_alps-4.4.git kernel
     - name: Prepare config
+      run: |
+        cd kernel
+        export ARCH=x86_64
+        make modules_prepare
+
+    - name: Build ko
       run: |
         cd kernel
 
         export ARCH=x86_64
-        make build.config.goldfish.x86_64
-
-        make modules_prepare
-
-    - name: Build target module
-      run: |
-        cd kernel
-
-        export ARCH=x86
 
         make -j$(nproc) drivers/usb/serial/option.ko
 
