@@ -20,9 +20,7 @@ jobs:
 
     - name: Clone kernel source
       run: |
-        git clone https://github.com/WWHQ/android_kernel_alps-4.4.git \
-          -b 4.4.146
-
+         git clone https://github.com/WWHQ/android_kernel_alps-4.4.git
     - name: Prepare config
       run: |
         cd kernel
