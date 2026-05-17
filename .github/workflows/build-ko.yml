@@ -1,0 +1,47 @@
+name: Build KO
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          build-essential bc bison flex \
+          libssl-dev libelf-dev
+
+    - name: Clone kernel source
+      run: |
+        git clone https://github.com/android/kernel_common.git \
+          -b android-4.4 kernel
+
+    - name: Prepare config
+      run: |
+        cd kernel
+
+        export ARCH=x86
+        make defconfig
+
+        make modules_prepare
+
+    - name: Build target module
+      run: |
+        cd kernel
+
+        export ARCH=x86
+
+        make -j$(nproc) drivers/usb/serial/option.ko
+
+    - name: Upload ko
+      uses: actions/upload-artifact@v4
+      with:
+        name: ko
+        path: kernel/drivers/usb/serial/option.ko
