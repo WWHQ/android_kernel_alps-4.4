@@ -20,8 +20,8 @@ jobs:
 
     - name: Clone kernel source
       run: |
-        git clone https://github.com/android/kernel_common.git \
-          -b android-4.4 kernel
+        git clone https://github.com/WWHQ/android_kernel_alps-4.4.git \
+          -b 4.4.146
 
     - name: Prepare config
       run: |
