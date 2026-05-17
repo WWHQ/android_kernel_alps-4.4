@@ -1,4 +1,4 @@
-name: Build Android Kernel Module
+name: Build Android Kernel Module with Patch
 
 on:
   workflow_dispatch:
@@ -25,41 +25,51 @@ jobs:
             flex \
             libssl-dev \
             libelf-dev \
-            dwarves
+            dwarves \
+            binutils # 确保 objcopy 绝对可用
 
       - name: Configure kernel
         run: |
-          # 1. 生成基础配置
           make x86_64_defconfig
-          
-          # 2. 【核心修改】强行开启模块版本控制 (modversions)
           scripts/config --enable CONFIG_MODULES || true
           scripts/config --enable CONFIG_MODVERSIONS || true
           scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL || true
-          
-          # 3. 其他原有配置对齐
           scripts/config --enable CONFIG_DRM || true
           scripts/config --enable CONFIG_PREEMPT || true
           sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
           touch .scmversion
-          
-          # 4. 应用新配置
           make oldconfig
-          
-          # 5. 【核心修改】必须完整执行一次 prepare 流程
-          # 这一步非常关键，它会在内核源码树中生成带有各函数真实 CRC 哈希值的 Module.symvers 文件
           make prepare
           make modules_prepare
 
       - name: Build rmm modules
         run: |
-          # 编译时注入编译宏，确保驱动源码感知到 MODVERSIONS
           make ARCH=x86_64 M=drivers/rmm EXTRA_CFLAGS="-DCONFIG_MODVERSIONS -DMODVERSIONS" modules V=1
+
+      # =================【核心补丁步骤】=================
+      - name: Patch Module Section via Objcopy
+        run: |
+          # 寻找编译出来的驱动文件，假设在驱动输出目录下
+          TARGET_KO=$(find drivers/rmm -name "TearGame.ko" | head -n 1)
+          
+          if [ -f "$TARGET_KO" ] && [ -f "fastpipe_base.ko" ]; then
+            echo "开始为驱动移植符号版本控制段..."
+            
+            # 1. 从雷电官方驱动中强行剥离出通过雷电内核校验的 __versions 数据块
+            objcopy --dump-section __versions=fastpipe_versions.bin fastpipe_base.ko
+            
+            # 2. 将此正确的 CRC 符号表覆盖到你刚刚编译好的 TearGame.ko 中
+            objcopy --update-section __versions=fastpipe_versions.bin "$TARGET_KO"
+            
+            echo "符号段修补完成！"
+          else
+            echo "未找到 TearGame.ko 或仓库根目录下的 fastpipe_base.ko，跳过补丁步骤。"
+          fi
+      # =================================================
 
       - name: List built modules
         run: |
           find drivers/rmm -name "*.ko" -o -name "*.o" | head -200
-          find . -name "*.ko"
 
       - name: Upload modules
         uses: actions/upload-artifact@v4
