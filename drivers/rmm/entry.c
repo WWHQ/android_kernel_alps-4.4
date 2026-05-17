@@ -1,23 +1,30 @@
 /**
  * ============================================================================
- * 泪心开源驱动 - TearGame Open Source Driver (雷电 4.4.146 完美整合版入口)
+ * 泪心开源驱动 - TearGame Open Source Driver (主入口规避警告修正版)
  * ============================================================================
  */
 
 #include <linux/module.h>
 #include <linux/tty.h>
 #include <linux/miscdevice.h>
-#include <linux/kallsyms.h> // 引入解密内核符号的关键头文件
+#include <linux/kallsyms.h> 
 #include "comm.h"
 #include "memory.h"
 #include "process.h"
 
 #define DEVICE_NAME "TearGame"
 
-/* =================【跨文件共享的动态函数指针定义】================= */
+/* =================【定义全局解密函数指针】================= */
 void (*dyn_put_pid)(struct pid *pid) = NULL;
 char *(*dyn_d_path)(const struct path *path, char *buf, int buflen) = NULL;
 void (*dyn_up_read)(struct rw_semaphore *sem) = NULL;
+
+/* 前置声明，防止编译器报 prototype 警告 */
+int dispatch_open(struct inode *node, struct file *file);
+int dispatch_close(struct inode *node, struct file *file);
+long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned long const arg);
+int __init driver_entry(void);
+void __exit driver_unload(void);
 
 int dispatch_open(struct inode *node, struct file *file)
 {
@@ -52,7 +59,8 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 		{
 			return -1;
 		}
-		if (read_process_memory(cm.pid, cm.addr, cm.buffer, cm.size) == false)
+		// 【修复点】：强制转换为符合 memory.h 的 void* 指针，消灭报错与警告
+		if (read_process_memory(cm.pid, (uintptr_t)cm.addr, (void *)(uintptr_t)cm.buffer, (size_t)cm.size) == false)
 		{
 			return -1;
 		}
@@ -64,7 +72,8 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 		{
 			return -1;
 		}
-		if (write_process_memory(cm.pid, cm.addr, cm.buffer, cm.size) == false)
+		// 【修复点】：同理强制类型转换
+		if (write_process_memory(cm.pid, (uintptr_t)cm.addr, (void *)(uintptr_t)cm.buffer, (size_t)cm.size) == false)
 		{
 			return -1;
 		}
@@ -72,7 +81,7 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 	}
 	case OP_MODULE_BASE:
 	{
-		if (copy_from_user(&mb, (void __user *)arg, sizeof(mb)) != 0 || copy_from_user(name, (void __user *)mb.name, sizeof(name) - 1) != 0)
+		if (copy_from_user(&mb, (void __user *)arg, sizeof(mb)) != 0 || copy_from_user(name, (void __user *)(uintptr_t)mb.name, sizeof(name) - 1) != 0)
 		{
 			return -1;
 		}
@@ -102,7 +111,6 @@ struct miscdevice misc = {
 	.fops = &dispatch_functions,
 };
 
-/* =================【唯一下载/启动入口】================= */
 int __init driver_entry(void)
 {
 	int ret;
@@ -112,19 +120,19 @@ int __init driver_entry(void)
 	printk(KERN_INFO "[TearGame] QQ: 2254013571\n");
 	printk(KERN_INFO "[TearGame] Email: tearhacker@outlook.com\n");
 	printk(KERN_INFO "[TearGame] Telegram: t.me/TearGame\n");
-	printk(KERN_INFO "[TearGame] GitHub: github.com/tearhacker\n");
+	printk(KERN_INFO "[TearGame] GitHub: ://github.com\n");
 	printk(KERN_INFO "=============================================\n");
 	
-	// 【核心动作】：在注册设备前，秒速解密雷电 4.4 内核的所有动态印记
+	// 在此处统一解密内核函数指针
 	dyn_put_pid = (void (*)(struct pid *))kallsyms_lookup_name("put_pid");
 	dyn_d_path  = (char *(*)(const struct path *, char *, int))kallsyms_lookup_name("d_path");
 	dyn_up_read  = (void (*)(struct rw_semaphore *))kallsyms_lookup_name("up_read");
 
 	if (!dyn_put_pid || !dyn_d_path || !dyn_up_read) {
-		printk(KERN_ERR "[TearGame] 致命错误：解密雷电内核符号失败！拒绝挂载。\n");
+		printk(KERN_ERR "[TearGame] 错误：动态解析雷电内核关键符号失败！\n");
 		return -EINVAL;
 	}
-	printk(KERN_INFO "[TearGame] 恭喜！雷电 4.4.146 全量内核符号动态指针绑定成功！\n");
+	printk(KERN_INFO "[TearGame] 雷电内核运行指针注入成功！\n");
 
 	ret = misc_register(&misc);
 	if (ret == 0) {
