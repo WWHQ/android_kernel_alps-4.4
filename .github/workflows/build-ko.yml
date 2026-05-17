@@ -26,7 +26,7 @@ jobs:
         cd kernel
 
         export ARCH=x86
-        make defconfig
+        make x86_64_defconfig
 
         make modules_prepare
 
