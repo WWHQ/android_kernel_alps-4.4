@@ -6,7 +6,6 @@ on:
 env:
   ARCH: x86_64
   CROSS_COMPILE: ""
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build_ko:
@@ -30,23 +29,12 @@ jobs:
 
       - name: Configure kernel
         run: |
-          # 使用默认 x86_64 配置
           make x86_64_defconfig
-
-          # 强制开启模块支持
-          scripts/config --enable MODULES || true
-          scripts/config --enable DRM || true
-
-          # 强制开启 PREEMPT
-          scripts/config --enable PREEMPT || true
-
-          # 清理 localversion
+          scripts/config --enable CONFIG_MODULES || true
+          scripts/config --enable CONFIG_DRM || true
+          scripts/config --enable CONFIG_PREEMPT || true
           sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
-
-             # 禁止自动追加 +
           touch .scmversion
-
-          # 重新生成配置文件
           make oldconfig
           make prepare
           make modules_prepare
