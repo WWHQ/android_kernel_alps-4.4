@@ -40,13 +40,13 @@ jobs:
           make prepare
           make modules_prepare
 
-      - name: Build GPU modules
+      - name: Build rmm modules
         run: |
-          make M=drivers/gpu modules V=1
+          make M=drivers/rmm modules V=1
 
       - name: List built modules
         run: |
-          find drivers/gpu -name "*.ko" -o -name "*.o" | head -200
+          find drivers/rmm -name "*.ko" -o -name "*.o" | head -200
           find . -name "*.ko"
 
       - name: Upload modules
