@@ -34,8 +34,8 @@
 	#include <linux/uaccess.h>
 	#include <linux/version.h>
 	#include <linux/sched.h>
-	#include <linux/sched/task.h>
 	#include <linux/pid.h>
+
 
 	
 	bool read_process_memory(pid_t pid, uintptr_t addr, void *buffer, size_t size)
