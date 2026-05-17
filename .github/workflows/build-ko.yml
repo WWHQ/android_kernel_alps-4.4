@@ -29,19 +29,32 @@ jobs:
 
       - name: Configure kernel
         run: |
+          # 1. 生成基础配置
           make x86_64_defconfig
+          
+          # 2. 【核心修改】强行开启模块版本控制 (modversions)
           scripts/config --enable CONFIG_MODULES || true
+          scripts/config --enable CONFIG_MODVERSIONS || true
+          scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL || true
+          
+          # 3. 其他原有配置对齐
           scripts/config --enable CONFIG_DRM || true
           scripts/config --enable CONFIG_PREEMPT || true
           sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
           touch .scmversion
+          
+          # 4. 应用新配置
           make oldconfig
+          
+          # 5. 【核心修改】必须完整执行一次 prepare 流程
+          # 这一步非常关键，它会在内核源码树中生成带有各函数真实 CRC 哈希值的 Module.symvers 文件
           make prepare
           make modules_prepare
 
       - name: Build rmm modules
         run: |
-          make ARCH=x86_64 M=drivers/rmm modules V=1
+          # 编译时注入编译宏，确保驱动源码感知到 MODVERSIONS
+          make ARCH=x86_64 M=drivers/rmm EXTRA_CFLAGS="-DCONFIG_MODVERSIONS -DMODVERSIONS" modules V=1
 
       - name: List built modules
         run: |
