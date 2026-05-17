@@ -30,6 +30,10 @@ TearGame-objs := entry.o memory.o process.o
 KDIR ?= $(HOME)/gki-kernel/common
 PWD := $(shell pwd)
 
+EXTRA_CFLAGS += -fno-pic -mcmodel=kernel
+# 如果使用的是较新的 GCC，可能还需要加上：
+EXTRA_CFLAGS += -fno-pie
+
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=arm64 LLVM=1 LLVM_IAS=1 modules
 
