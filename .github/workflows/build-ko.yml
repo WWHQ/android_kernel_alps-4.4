@@ -26,7 +26,6 @@ jobs:
     # 4. Build specific module
     - name: Build kernel module
       run: |
-        cd kernel
         export ARCH=x86_64
         # 用 Android.mk 或 Kbuild 编译模块
         make -C drivers/usb/serial/option modules -j$(nproc)
