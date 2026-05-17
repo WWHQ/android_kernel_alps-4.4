@@ -30,9 +30,7 @@
 	//泪心驱动完整开源读写内核源码新项目链接 https://github.com/tearhacker/TearGame_KernelDriver_Android_WriteReadMemory
 
 	#include "process.h"
-	#include <linux/sched.h>
-	#include <linux/sched/mm.h>
-	#include <linux/sched/task.h>
+	#include <linux/sched.h>   // 代替 sched/mm.h 和 sched/task.h
 	#include <linux/module.h>
 	#include <linux/mm.h>
 	#include <linux/version.h>
@@ -40,6 +38,7 @@
 	#include <linux/fs.h>
 	#include <linux/dcache.h>
 	#include <linux/rwsem.h>
+
 	
 	/* 兼容旧内核版本的mmap锁API */
 	#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
