@@ -26,54 +26,84 @@ jobs:
             libssl-dev \
             libelf-dev \
             dwarves \
-            binutils # 确保 objcopy 绝对可用
+            binutils \
+            git
 
-      - name: Configure kernel
+      # =================【步骤 1：拉取匹配的 Android 4.4 内核源码】=================
+      - name: Clone Android 4.4 Kernel Source
         run: |
-          make x86_64_defconfig
+          echo "正在拉取谷歌官方 Android 4.4 通用内核源码..."
+          git clone --depth 1 -b android-4.4 https://googlesource.com kernel-source
+          
+          echo "正在将你的驱动代码移动到内核树中进行树内编译..."
+          # 假设你的项目里包含 drivers/rmm 目录，将其完整移入内核树中
+          mkdir -p kernel-source/drivers/rmm
+          cp -r drivers/rmm/* kernel-source/drivers/rmm/ || true
+
+      # =================【步骤 2：精确配置 4.4 内核环境】=================
+      - name: Configure kernel
+        cwd: kernel-source
+        run: |
+          # 生成基础的 x86_64 默认配置
+          make ARCH=x86_64 x86_64_defconfig
+          
+          # 根据雷电模拟器的 vermagic 严格开启对应内核开关
           scripts/config --enable CONFIG_MODULES || true
           scripts/config --enable CONFIG_MODVERSIONS || true
-          scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL || true
-          scripts/config --enable CONFIG_DRM || true
           scripts/config --enable CONFIG_PREEMPT || true
+          scripts/config --enable CONFIG_MODULE_UNLOAD || true
+          scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL || true
+          
+          # 清除可能多出来的本地编译后缀（如 -dirty 等），确保主版本号干净
           sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
           touch .scmversion
-          make oldconfig
-          make prepare
-          make modules_prepare
+          
+          # 刷新并生成编译所需的中间头文件
+          make ARCH=x86_64 oldconfig
+          make ARCH=x86_64 prepare
+          make ARCH=x86_64 modules_prepare
 
+      # =================【步骤 3：编译你的 RMM 模块】=================
       - name: Build rmm modules
+        cwd: kernel-source
         run: |
+          # 在 4.4 内核环境下编译你的 TearGame 驱动
           make ARCH=x86_64 M=drivers/rmm EXTRA_CFLAGS="-DCONFIG_MODVERSIONS -DMODVERSIONS" modules V=1
 
-      # =================【核心补丁步骤】=================
+      # =================【步骤 4：核心双段覆盖补丁】=================
       - name: Patch Module Section via Objcopy
         run: |
-          # 寻找编译出来的驱动文件，假设在驱动输出目录下
-          TARGET_KO=$(find drivers/rmm -name "TearGame.ko" | head -n 1)
+          # 定位刚刚编译生成的 TearGame.ko 文件
+          TARGET_KO=$(find kernel-source/drivers/rmm -name "TearGame.ko" | head -n 1)
           
+          # 确保你仓库的根目录下放了雷电官方的 fastpipe_base.ko 文件
           if [ -f "$TARGET_KO" ] && [ -f "fastpipe_base.ko" ]; then
-            echo "开始为驱动移植符号版本控制段..."
+            echo "==== 开始对 TearGame.ko 进行双段覆盖（偷梁换柱） ===="
             
-            # 1. 从雷电官方驱动中强行剥离出通过雷电内核校验的 __versions 数据块
+            # 1. 提取并覆盖 .modinfo 段：强行改写内核版本字符串（解决 Exec format 核心报错）
+            objcopy --dump-section .modinfo=fastpipe_modinfo.bin fastpipe_base.ko
+            objcopy --update-section .modinfo=fastpipe_modinfo.bin "$TARGET_KO"
+            echo "-> .modinfo (vermagic) 覆盖成功"
+            
+            # 2. 提取并覆盖 __versions 段：强行同步内核导出函数的 CRC 校验码
             objcopy --dump-section __versions=fastpipe_versions.bin fastpipe_base.ko
-            
-            # 2. 将此正确的 CRC 符号表覆盖到你刚刚编译好的 TearGame.ko 中
             objcopy --update-section __versions=fastpipe_versions.bin "$TARGET_KO"
+            echo "-> __versions (CRC符号表) 覆盖成功"
             
-            echo "符号段修补完成！"
+            echo "==== 驱动补丁全部修补完成！ ===="
           else
-            echo "未找到 TearGame.ko 或仓库根目录下的 fastpipe_base.ko，跳过补丁步骤。"
+            echo "错误：未找到 TearGame.ko 或仓库根目录下的 fastpipe_base.ko，跳过补丁步骤。"
+            exit 1
           fi
-      # =================================================
 
+      # =================【步骤 5：验证与产物上传】=================
       - name: List built modules
         run: |
-          find drivers/rmm -name "*.ko" -o -name "*.o" | head -200
+          find kernel-source/drivers/rmm -name "*.ko" -o -name "*.o" | head -20
 
       - name: Upload modules
         uses: actions/upload-artifact@v4
         with:
           name: kernel_modules
           path: |
-            **/*.ko
+            kernel-source/drivers/rmm/*.ko
