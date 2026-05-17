@@ -35,6 +35,7 @@ jobs:
           # 强制开启模块支持
           scripts/config --enable MODULES || true
           scripts/config --module DRM || true
+          sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
 
           make oldconfig
           make prepare
