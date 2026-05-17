@@ -1,39 +1,40 @@
-name: Build KO
+name: Build Android Kernel Module
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build_ko:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    # 1. Checkout your repo
+    - uses: actions/checkout@v4
 
-    - name: Install deps
+    # 2. Install build dependencies
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          build-essential bc bison flex \
-          libssl-dev libelf-dev
+        sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev
 
-    - name: Prepare config
+    # 3. Setup Android kernel build environment
+    - name: Prepare build environment
       run: |
         cd kernel
         export ARCH=x86_64
-        make modules_prepare
+        export CROSS_COMPILE=""    # 如果是 x86/x86_64 本地编译可以为空
 
-    - name: Build ko
+    # 4. Build specific module
+    - name: Build kernel module
       run: |
         cd kernel
-
         export ARCH=x86_64
+        # 用 Android.mk 或 Kbuild 编译模块
+        make -C drivers/usb/serial/option modules -j$(nproc)
 
-        make -j$(nproc) drivers/usb/serial/option.ko
-
-    - name: Upload ko
+    # 5. Upload compiled module
+    - name: Upload .ko artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ko
-        path: kernel/drivers/usb/serial/option.ko
+        name: kernel_module
+        path: kernel/drivers/usb/serial/option/*.ko
