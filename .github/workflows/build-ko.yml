@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_ko:
+ build_ko:
     runs-on: ubuntu-22.04
 
     env:
@@ -12,44 +12,52 @@ jobs:
       CROSS_COMPILE: ""
 
     steps:
-      - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            build-essential \
-            bc \
-            bison \
-            flex \
-            libssl-dev \
-            libelf-dev
+    # 拉源码
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      - name: Inspect kernel tree
-        run: |
-          pwd
-          ls
-          ls scripts | head || true
-          head -20 Makefile
+    # 安装编译环境
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          build-essential \
+          bc \
+          bison \
+          flex \
+          libssl-dev \
+          libelf-dev
 
-      - name: Find defconfig
-        run: |
-          find arch -name "*defconfig" | head -20
+    # 查看环境（可删）
+    - name: Check kernel tree
+      run: |
+        pwd
+        ls
+        uname -a
+        head -20 Makefile
 
-      - name: Configure kernel
-        run: |
-          make defconfig || true
+    # 配置内核
+    - name: Configure kernel
+      run: |
+        make defconfig
+        make prepare
+        make modules_prepare
 
-      - name: Build module
-        run: |
-          make M=drivers/gpu V=1 || true
+    # 编译 GPU 模块
+    - name: Build module
+      run: |
+        make M=drivers/gpu modules V=1
 
-      - name: Find ko
-        run: |
-          find . -name "*.ko"
+    # 查找生成的 ko
+    - name: Find modules
+      run: |
+        find . -name "*.ko"
 
-      - name: Upload ko
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel_module
-          path: "**/*.ko"
+    # 上传 ko
+    - name: Upload modules
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel_modules
+        path: |
+          **/*.ko
