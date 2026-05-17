@@ -30,20 +30,27 @@ jobs:
 
       - name: Configure kernel
         run: |
+          # 使用默认 x86_64 配置
           make x86_64_defconfig
 
           # 强制开启模块支持
           scripts/config --enable MODULES || true
-          scripts/config --module DRM || true
+          scripts/config --enable DRM || true
+
+          # 强制开启 PREEMPT
+          scripts/config --enable PREEMPT || true
+
+          # 清理 localversion
           sed -i 's/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=""/' .config
 
+          # 重新生成配置文件
           make oldconfig
           make prepare
           make modules_prepare
 
       - name: Build rmm modules
         run: |
-          make M=drivers/rmm modules V=1
+          make ARCH=x86_64 M=drivers/rmm modules V=1
 
       - name: List built modules
         run: |
