@@ -14,7 +14,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential binutils
+          sudo apt install -y build-essential binutils libssl-dev libelf-dev
 
       # =================【步骤 1：本地构建纯净伪内核树】=================
       - name: Setup Local Fake Kernel Tree
@@ -40,18 +40,28 @@ jobs:
           touch fake-kernel/include/generated/autoconf.h
           echo '#define CONFIG_MODULES 1' > fake-kernel/include/config/modules.h
 
-      # =================【步骤 2：编译你的 RMM 模块】=================
+      # =================【步骤 2：编译你的 RMM 模块（已注入 Kprobe 编译开关）】=================
       - name: Build rmm modules
         run: |
           echo "==== 开始在本仓库路径下直接编译驱动 ===="
           cd drivers/rmm
           
-          # 编译器会自动读取你刚刚创建的 Module.symvers，把真实印记编译进内核
+          # 1. 尝试使用本地伪造的 4.4 结构体编译
           make -C ../../fake-kernel M=$PWD modules || true
           
+          # 2. 如果失败，启动宿主机环境兜底硬啃
           if [ ! -f "TearGame.ko" ]; then
-            echo "尝试使用宿主机环境强行破壳编译..."
-            make -C /lib/modules/$(uname -r)/build M=$PWD modules || true
+            echo "由于缺少中间头文件，正在启动宿主机内核环境硬啃编译..."
+            
+            # 【核心修复】：强行注入高级探针开关到宿主机内核编译配置文件中，防止 MODVERSIONS 下探针结构体断裂
+            HOST_KDIR="/lib/modules/$(uname -r)/build"
+            if [ -f "$HOST_KDIR/.config" ]; then
+              sudo sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' "$HOST_KDIR/.config" || true
+              echo "CONFIG_KPROBES=y" | sudo tee -a "$HOST_KDIR/.config" || true
+            fi
+            
+            # 携带探针开启宏，压制 modpost 的未定义符号拦截
+            make -C $HOST_KDIR M=$PWD EXTRA_CFLAGS="-DCONFIG_KPROBES -DCONFIG_MODVERSIONS" modules || true
           fi
 
       # =================【步骤 3：核心双段覆盖补丁】=================
@@ -62,20 +72,19 @@ jobs:
           if [ -f "$TARGET_KO" ] && [ -f "fastpipe_base.ko" ]; then
             echo "==== 开始对 TearGame.ko 进行精准身份与底层结构伪造 ===="
             
-            # 1. 提取并覆盖 .modinfo 段（版本魔术字符串）
+            # 1. 提取并覆盖 .modinfo 段（版本魔术字符串，欺骗雷电第一道校验关卡）
             objcopy --dump-section .modinfo=fastpipe_modinfo.bin fastpipe_base.ko
             objcopy --update-section .modinfo=fastpipe_modinfo.bin "$TARGET_KO"
             echo "-> .modinfo 注入成功"
             
-            # 2. 提取并覆盖 __versions 段（符号表）
-            # 有了 Module.symvers 奠定底层结构，这次强刷不会再引发物理损坏
+            # 2. 提取并覆盖 __versions 段（符号表，同步内核导出函数的物理指纹）
             objcopy --dump-section __versions=fastpipe_versions.bin fastpipe_base.ko
             objcopy --update-section __versions=fastpipe_versions.bin "$TARGET_KO"
             echo "-> __versions 精准同步成功"
             
             echo "==== 驱动补丁全部修补完成！ ===="
           else
-            echo "错误：文件缺失！"
+            echo "错误：未找到编译出的 TearGame.ko 或仓库根目录下的 fastpipe_base.ko！"
             exit 1
           fi
 
