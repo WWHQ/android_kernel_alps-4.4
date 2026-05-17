@@ -3,61 +3,55 @@ name: Build Android Kernel Module
 on:
   workflow_dispatch:
 
+env:
+  ARCH: x86_64
+  CROSS_COMPILE: ""
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
- build_ko:
+  build_ko:
     runs-on: ubuntu-22.04
 
-    env:
-      ARCH: x86_64
-      CROSS_COMPILE: ""
-
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-    # 拉源码
-    - name: Checkout source
-      uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            bc \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            dwarves
 
-    # 安装编译环境
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          build-essential \
-          bc \
-          bison \
-          flex \
-          libssl-dev \
-          libelf-dev
+      - name: Configure kernel
+        run: |
+          make x86_64_defconfig
 
-    # 查看环境（可删）
-    - name: Check kernel tree
-      run: |
-        pwd
-        ls
-        uname -a
-        head -20 Makefile
+          # 强制开启模块支持
+          scripts/config --enable MODULES || true
+          scripts/config --module DRM || true
 
-    # 配置内核
-    - name: Configure kernel
-      run: |
-        make defconfig
-        make prepare
-        make modules_prepare
+          make oldconfig
+          make prepare
+          make modules_prepare
 
-    # 编译 GPU 模块
-    - name: Build module
-      run: |
-        make M=drivers/gpu modules V=1
+      - name: Build GPU modules
+        run: |
+          make M=drivers/gpu modules V=1
 
-    # 查找生成的 ko
-    - name: Find modules
-      run: |
-        find . -name "*.ko"
+      - name: List built modules
+        run: |
+          find drivers/gpu -name "*.ko" -o -name "*.o" | head -200
+          find . -name "*.ko"
 
-    # 上传 ko
-    - name: Upload modules
-      uses: actions/upload-artifact@v4
-      with:
-        name: kernel_modules
-        path: |
-          **/*.ko
+      - name: Upload modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel_modules
+          path: |
+            **/*.ko
